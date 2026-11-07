@@ -1,5 +1,4 @@
-#ifndef MEMORY_BLOCK_H_
-#define MEMORY_BLOCK_H_
+#pragma once
 
 #include <string>
 
@@ -12,17 +11,28 @@ protected:
     int* data;
 public:
     MemoryBlock(size_t size);
-    virtual IdleAction onLastRelease() const = 0;
-    virtual MemoryBlock* clone() const = 0;
-    int readFromBlock(std::size_t offset) const;
-    void writeToBlock(std::size_t offset, int value);
+    
+    // Rule of 5
+    virtual ~MemoryBlock();                             // 1. Destructor
+    MemoryBlock(const MemoryBlock& other);              // 2. Copy Constructor
+    MemoryBlock& operator=(const MemoryBlock& other);   // 3. Copy Assignment Operator
+    MemoryBlock(MemoryBlock&& other);                   // 4. Move Constructor
+    MemoryBlock& operator=(MemoryBlock&& other);        // 5. Move Assignment Operator
+
+    int readFromBlock(size_t offset) const;
+    void writeToBlock(size_t offset, int value);
+
     void acquire();
     IdleAction release();
+
+    virtual IdleAction onLastRelease() const = 0;
+    virtual MemoryBlock* clone() const = 0;
 };
 
 class KVBlock: public MemoryBlock{
 public:
     KVBlock(size_t size);
+
     virtual IdleAction onLastRelease() const;
     virtual MemoryBlock* clone() const;
 };
@@ -30,8 +40,7 @@ public:
 class EmbeddingWorkspace: public MemoryBlock{
 public:
     EmbeddingWorkspace(size_t size);
+
     virtual IdleAction onLastRelease() const;
     virtual MemoryBlock* clone() const;
 };
-
-#endif
