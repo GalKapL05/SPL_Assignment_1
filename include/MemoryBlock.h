@@ -2,6 +2,8 @@
 
 #include <string>
 
+using std::copy;
+
 enum class IdleAction { KeepCached, Destroy };
 
 class MemoryBlock{
