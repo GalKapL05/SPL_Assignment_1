@@ -14,12 +14,14 @@ protected:
 public:
     MemoryBlock(size_t size);
     
-    // Rule of 5
-    virtual ~MemoryBlock();                             // 1. Destructor
-    MemoryBlock(const MemoryBlock& other);              // 2. Copy Constructor
-    MemoryBlock& operator=(const MemoryBlock& other);   // 3. Copy Assignment Operator
-    MemoryBlock(MemoryBlock&& other);                   // 4. Move Constructor
-    MemoryBlock& operator=(MemoryBlock&& other);        // 5. Move Assignment Operator
+    virtual ~MemoryBlock();                             
+    MemoryBlock(const MemoryBlock& other);              
+    MemoryBlock& operator=(const MemoryBlock& other);   
+    MemoryBlock(MemoryBlock&& other);                   
+    MemoryBlock& operator=(MemoryBlock&& other);     
+
+    int getRefCount() const;
+    const size_t& getSize() const;
 
     int readFromBlock(size_t offset) const;
     void writeToBlock(size_t offset, int value);

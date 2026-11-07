@@ -1,38 +1,39 @@
-#ifndef SERVER_H_
-#define SERVER_H_
+#pragma once
 
-#include <vector>
-#include <string>
-#include "Request.h"
 #include "GPU.h"
+#include "Request.h"
+#include "SchedulingPolicy.h"
+
+using std::vector;
+using std::string;
 
 struct GPUConfig{
-    std::size_t memoryBytes;
+    size_t memoryBytes;
 };
 
 struct ModelConfig{
-    std::string id;
-    std::size_t embeddingSize;
+    string id;
+    size_t embeddingSize;
 };
 
 enum class RequestType { Generative, TextEmbedder };
 
 struct RequestConfig{
-    std::size_t id;
+    size_t id;
     RequestType type;
-    std::string modelId;
+    string modelId;
     int admissionCycle;
-    std::string prompt;
-    std::string scriptedOutput;
+    string prompt;
+    string scriptedOutput;
     size_t maxOutputTokens;
 };
 
 struct Config{
-    std::size_t blockSize;
-    std::vector<GPUConfig> gpus;
-    std::vector<ModelConfig> models;
-    std::vector<RequestConfig> requests;
-    std::string policy;
+    size_t blockSize;
+    vector<GPUConfig> gpus;
+    vector<ModelConfig> models;
+    vector<RequestConfig> requests;
+    string policy;
 };
 
 class Model;
@@ -40,18 +41,26 @@ class SchedulingPolicy;
 
 class Server{
 private:
-    Config readConfig(std::string configPath) const;
+    Config readConfig(string configPath) const;
 
-    std::vector<GPU> gpus;
-    std::vector<Model*> models;
-    std::vector<Request*> nonSubmittedRequests;
-    std::vector<Request*> waitingRequests;
-    std::vector<Request*> activeRequests;
+    vector<GPU> gpus;
+    vector<Model*> models;
+    vector<Request*> nonSubmittedRequests;
+    vector<Request*> waitingRequests;
+    vector<Request*> activeRequests;
     SchedulingPolicy* policy;
+
+    void clearAll();
+
 public:
-    Server(std::string configPath);
+    Server(string configPath);
+
+    ~Server();                                   
+    Server(const Server& other);                
+    Server& operator=(const Server& other);     
+    Server(Server&& other) noexcept;            
+    Server& operator=(Server&& other) noexcept; 
+
     bool step();
     void serve();
 };
-
-#endif
