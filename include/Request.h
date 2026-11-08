@@ -6,8 +6,10 @@
 #include "GPU.h"
 #include "Model.h"
 
+using std::min;
 using std::vector;
 using std::string;
+using std::to_string;
 
 class GPU;
 class Model;

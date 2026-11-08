@@ -1,40 +1,53 @@
 {
   "block_size": 64,
-  "scheduling_policy": "shortestJob",
+  "scheduling_policy": "longestPrefix",
   "gpus": [
     {
-      "memory_bytes": 256
-    },
-    {
-      "memory_bytes": 512
+      "memory_bytes": 192
     }
   ],
   "models": [
     {
-      "id": "model_a",
+      "id": "llama",
       "embedding_size": 16
-    },
-    {
-      "id": "model_b",
-      "embedding_size": 32
     }
   ],
   "requests": [
     {
       "id": 1,
       "type": "generative",
-      "model": "model_a",
+      "model": "llama",
       "cycle": 0,
-      "prompt": "hello_world",
-      "scripted_output": "hi there",
-      "max_output_tokens": 5
+      "prompt": "a b c d",
+      "scripted_output": "e f g h",
+      "max_output_tokens": 4
     },
     {
       "id": 2,
-      "type": "text_embedder",
-      "model": "model_b",
-      "cycle": 1,
-      "prompt": "test_embedding"
+      "type": "generative",
+      "model": "llama",
+      "cycle": 4,
+      "prompt": "a b c d e f g h",
+      "scripted_output": "i j k l",
+      "max_output_tokens": 4
+    },
+    {
+      "id": 3,
+      "type": "generative",
+      "model": "llama",
+      "cycle": 8,
+      "prompt": "x y z w",
+      "scripted_output": "u v t s",
+      "max_output_tokens": 4
+    },
+    {
+      "id": 4,
+      "type": "generative",
+      "model": "llama",
+      "cycle": 8,
+      "prompt": "a b c d",
+      "scripted_output": "m n",
+      "max_output_tokens": 2
     }
   ]
 }

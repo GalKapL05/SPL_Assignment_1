@@ -126,7 +126,12 @@ void GPU::unreserve(size_t n, const Request& request) {
     totalReserved = (totalReserved >= n) ? (totalReserved - n) : 0;
     for (size_t i = 0; i < requestReservations.size(); i++) {
         if (requestReservations[i].requestId == request.getId()) {
-            requestReservations[i].blocks = (requestReservations[i].blocks >= n) ? (requestReservations[i].blocks - n) : 0;
+            if (requestReservations[i].blocks >= n) {
+                requestReservations[i].blocks -= n;
+            } else {
+                requestReservations.erase(requestReservations.begin() + i);
+            }
+            return;
         }
     }
 }
@@ -155,7 +160,7 @@ size_t GPU::allocateBlock(const Request& request) {
         }
     }
 
-    if (targetSlot < 0 || static_cast<size_t>(targetSlot) >= blocksNum) {
+    if (targetSlot == -1) {
         return 0;
     }
 
@@ -180,10 +185,8 @@ void GPU::addMemoryBlock(const EmbeddingRequest& request, size_t slot) {
 
 void GPU::assignPrefixToBlock(size_t block, const vector<string>& prefixTokens, const string& modelId) {
     for (size_t i = 0; i < blocksNum; i++) {
-        if (i != block && memory[i] != nullptr && prefixesInfo[i].modelId == modelId) {
-            if (prefixesInfo[i].prefixKey == prefixTokens) {
-                return;
-            }
+        if (i != block && memory[i] != nullptr && prefixesInfo[i].modelId == modelId && prefixesInfo[i].prefixKey == prefixTokens) {
+            return;
         }
     }
     prefixesInfo[block].modelId = modelId;
@@ -192,7 +195,6 @@ void GPU::assignPrefixToBlock(size_t block, const vector<string>& prefixTokens, 
 
 PrefixMatch GPU::findLongestCachedPrefix(const string& modelId, size_t embeddingSize, const vector<string>& promptTokens) const {
     PrefixMatch match = PrefixMatch {0, vector<size_t>()};
-    match.matchedTokens = 0;
     if (embeddingSize == 0) {
         return match;
     }
@@ -279,7 +281,7 @@ void GPU::copyMemoryFromOtherGPU(const GPU& other, const vector<size_t>& blocks)
             }
         }
 
-        if (targetSlot < 0 || static_cast<size_t>(targetSlot) >= blocksNum) {
+        if (targetSlot == -1) {
             continue;
         }
 
@@ -304,7 +306,6 @@ void GPU::release(size_t slot) {
     if (memory[slot] == nullptr) {
         return;
     }
-
     IdleAction action = memory[slot]->release();
     if (memory[slot]->getRefCount() == 0) {
         if (action == IdleAction::Destroy || prefixesInfo[slot].prefixKey.empty()) {
@@ -324,15 +325,7 @@ void GPU::writeToBlock(size_t blockId, size_t offset, int value) {
     memory[blockId]->writeToBlock(offset, value);
 }
 
-const size_t &GPU::getBlocksNum() const
-{
-    return blocksNum;
-}
-
-const size_t &GPU::getBlockSize() const
-{
-    return blockSize;
-}
-
+const size_t &GPU::getBlocksNum() const { return blocksNum; }
+const size_t &GPU::getBlockSize() const { return blockSize; }
 const size_t &GPU::getCacheHits() const { return cacheHits; }
 const size_t& GPU::getEvictions() const { return evictions; }

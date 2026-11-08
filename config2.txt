@@ -4,9 +4,6 @@
   "gpus": [
     {
       "memory_bytes": 192
-    },
-    {
-      "memory_bytes": 256
     }
   ],
   "models": [
@@ -34,34 +31,34 @@
       "type": "generative",
       "model": "llama",
       "cycle": 0,
-      "prompt": "this prompt is way too long to ever fit in any gpu available in the whole server simulation",
-      "scripted_output": "impossible output",
-      "max_output_tokens": 50
+      "prompt": "this request needs way more than three blocks so it must be rejected immediately",
+      "scripted_output": "never",
+      "max_output_tokens": 10
     },
     {
       "id": 3,
-      "type": "text_embedder",
-      "model": "embedder",
-      "cycle": 1,
-      "prompt": "alpha beta gamma delta"
-    },
-    {
-      "id": 4,
       "type": "generative",
       "model": "llama",
       "cycle": 1,
       "prompt": "the cat sat down and slept",
-      "scripted_output": "peacefully",
+      "scripted_output": "well",
       "max_output_tokens": 1
+    },
+    {
+      "id": 4,
+      "type": "text_embedder",
+      "model": "embedder",
+      "cycle": 3,
+      "prompt": "alpha beta"
     },
     {
       "id": 5,
       "type": "generative",
       "model": "llama",
-      "cycle": 2,
-      "prompt": "alpha bravo charlie delta",
-      "scripted_output": "echo foxtrot golf hotel india juliet",
-      "max_output_tokens": 8
+      "cycle": 4,
+      "prompt": "one two three four",
+      "scripted_output": "five six seven eight nine",
+      "max_output_tokens": 5
     }
   ]
 }

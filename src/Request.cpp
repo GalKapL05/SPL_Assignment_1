@@ -41,9 +41,18 @@ GenerativeRequest::GenerativeRequest(int id, const Model& model, int admissionCy
     generatedTokensCount(0) {}
 
 size_t GenerativeRequest::getNeededMemory(const GPU& gpu) const {
-    size_t currentTokens = tokens.size() + generatedTokensCount;
-    size_t neededUnits = currentTokens * model.getEmbeddingSize();
-    return gpu.getBlocksForMemory(neededUnits);
+    size_t n = tokens.size();
+    size_t m = maxOutputTokens;
+    size_t h = 0;
+
+    size_t tokensPerBlock = gpu.getBlockSize() / model.getEmbeddingSize();
+    if (tokensPerBlock > 0) {
+        PrefixMatch match = gpu.findLongestCachedPrefix(model.getModelId(), model.getEmbeddingSize(), tokens);
+        h = match.matchedTokens;
+    }
+
+    size_t remainingTokens = (n >= h) ? (n - h + m) : m;
+    return remainingTokens * model.getEmbeddingSize();
 }
 
 size_t GenerativeRequest::getMaxNeededMemory() const {
@@ -88,10 +97,9 @@ void GenerativeRequest::reserveMemory(GPU& gpu) {
         }
     }
 
-    size_t maxNeeded = getMaxNeededMemory();
-    size_t totalBlocksNeeded = gpu.getBlocksForMemory(maxNeeded);
-    if (totalBlocksNeeded > memoryBlocks.size()) {
-        reservedBlocks = totalBlocksNeeded - memoryBlocks.size();
+    size_t neededBlocks = gpu.getBlocksForMemory(getMaxNeededMemory());
+    if (neededBlocks > memoryBlocks.size()) {
+        reservedBlocks = neededBlocks - memoryBlocks.size();
         gpu.reserve(reservedBlocks, *this);
     }
 
@@ -131,13 +139,14 @@ void GenerativeRequest::act(GPU& gpu) {
         size_t slot = memoryBlocks[blockIdx];
         size_t offset = (currentTokenIndex % tokensPerBlock) * model.getEmbeddingSize();
         
+        vector<string> fullSequence = tokens;
+        for (size_t i = 0; i <= generatedTokensCount; i++) {
+            fullSequence.push_back(outputTokens[i]);
+        }
+
         model.generateTokenEmbedding(outputTokens, gpu, slot, offset);
 
         if ((currentTokenIndex % tokensPerBlock) == tokensPerBlock - 1) {
-            vector<string> fullSequence = tokens;
-            for (size_t i = 0; i <= generatedTokensCount; i++) {
-                fullSequence.push_back(outputTokens[i]);
-            }
             gpu.assignPrefixToBlock(slot, fullSequence, model.getModelId());
         }
     }
@@ -146,17 +155,14 @@ void GenerativeRequest::act(GPU& gpu) {
 }
 
 string GenerativeRequest::getOutput() const {
-    string result = "";
-    size_t limit = generatedTokensCount;
-    if (limit > outputTokens.size()) {
-        limit = outputTokens.size();
+    size_t limit = min(generatedTokensCount, outputTokens.size());
+    if (limit == 0) {
+        return "";
     }
 
-    for (size_t i = 0; i < limit; i++) {
-        if (i > 0) {
-            result += " ";
-        }
-        result += outputTokens[i];
+    string result = outputTokens[0];
+    for (size_t i = 1; i < limit; i++) {
+        result += " " + outputTokens[i];
     }
     return result;
 }
@@ -225,21 +231,24 @@ void EmbeddingRequest::act(GPU& gpu) {
         return;
     }
 
-    size_t embeddingSize = model.getEmbeddingSize();
     size_t slot = memoryBlocks[0];
+    size_t embeddingSize = model.getEmbeddingSize();
 
-    vector<string> currentTokenVector = { tokens[processedTokens] };
-    model.generateTokenEmbedding(currentTokenVector, gpu, slot, 0);
+    for (size_t i = 0; i < tokens.size(); i++) {
+        vector<string> currentTokenVector = { tokens[i] };
+        model.generateTokenEmbedding(currentTokenVector, gpu, slot, 0);
+
+        for (size_t j = 0; j < embeddingSize; j++) {
+            accumulatedSum[j] += gpu.readFromBlock(slot, j);
+        }
+    }
 
     for (size_t i = 0; i < embeddingSize; i++) {
-        accumulatedSum[i] += gpu.readFromBlock(slot, i);
+        int avg = accumulatedSum[i] / static_cast<int>(tokens.size());
+        gpu.writeToBlock(slot, embeddingSize + i, avg);
     }
 
-    ++processedTokens;
-
-    if (processedTokens >= tokens.size()) {
-        isFinished = true;
-    }
+    isFinished = true;
 }
 
 bool EmbeddingRequest::finished() const {
@@ -247,17 +256,14 @@ bool EmbeddingRequest::finished() const {
 }
 
 string EmbeddingRequest::getOutput() const {
-    if (tokens.empty()) {
+    if (tokens.empty() || accumulatedSum.empty()) {
         return "[]";
     }
 
     int count = static_cast<int>(tokens.size());
-    string result = "[";
-    for (size_t i = 0; i < accumulatedSum.size(); i++) {
-        if (i > 0) {
-            result += ", ";
-        }
-        result += std::to_string(accumulatedSum[i] / count);
+    string result = "[" + to_string(accumulatedSum[0] / count);
+    for (size_t i = 1; i < accumulatedSum.size(); i++) {
+        result += ", " + to_string(accumulatedSum[i] / count);
     }
     result += "]";
     return result;
