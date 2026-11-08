@@ -7,6 +7,10 @@ using std::move;
 using std::vector;
 using std::string;
 
+class Request;
+class EmbeddingRequest;
+class GenerativeRequest;
+
 struct PrefixMatch {
     size_t matchedTokens;
     vector<size_t> blockIds;
@@ -54,6 +58,7 @@ public:
 
     PrefixMatch findLongestCachedPrefix(const string& modelId, size_t embeddingSize, const vector<string>& promptTokens) const;
 
+    const size_t& getBlocksNum() const;
     const size_t& getBlockSize() const;
     const size_t& getCacheHits() const;
     const size_t& getEvictions() const;

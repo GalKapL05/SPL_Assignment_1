@@ -1,0 +1,40 @@
+{
+  "block_size": 64,
+  "scheduling_policy": "shortestJob",
+  "gpus": [
+    {
+      "memory_bytes": 256
+    },
+    {
+      "memory_bytes": 512
+    }
+  ],
+  "models": [
+    {
+      "id": "model_a",
+      "embedding_size": 16
+    },
+    {
+      "id": "model_b",
+      "embedding_size": 32
+    }
+  ],
+  "requests": [
+    {
+      "id": 1,
+      "type": "generative",
+      "model": "model_a",
+      "cycle": 0,
+      "prompt": "hello_world",
+      "scripted_output": "hi there",
+      "max_output_tokens": 5
+    },
+    {
+      "id": 2,
+      "type": "text_embedder",
+      "model": "model_b",
+      "cycle": 1,
+      "prompt": "test_embedding"
+    }
+  ]
+}

@@ -113,7 +113,13 @@ size_t GPU::getBlocksForMemory(size_t memory) const {
 
 void GPU::reserve(size_t n, const Request& request) {
     totalReserved += n;
-    requestReservations[request.getId()].blocks += n;
+    for (size_t i = 0; i < requestReservations.size(); i++) {
+        if (requestReservations[i].requestId == request.getId()) {
+            requestReservations[i].blocks += n;
+            return;
+        }
+    }
+    requestReservations.push_back(Reservation{n, request.getId()});
 }
 
 void GPU::unreserve(size_t n, const Request& request) {
@@ -149,6 +155,10 @@ size_t GPU::allocateBlock(const Request& request) {
         }
     }
 
+    if (targetSlot < 0 || static_cast<size_t>(targetSlot) >= blocksNum) {
+        return 0;
+    }
+
     size_t chosenSlot = static_cast<size_t>(targetSlot);
     request.allocateOneBlock(*this, chosenSlot);
     unreserve(1, request);
@@ -181,7 +191,7 @@ void GPU::assignPrefixToBlock(size_t block, const vector<string>& prefixTokens, 
 }
 
 PrefixMatch GPU::findLongestCachedPrefix(const string& modelId, size_t embeddingSize, const vector<string>& promptTokens) const {
-    PrefixMatch match;
+    PrefixMatch match = PrefixMatch {0, vector<size_t>()};
     match.matchedTokens = 0;
     if (embeddingSize == 0) {
         return match;
@@ -220,6 +230,10 @@ void GPU::copyMemoryFromOtherGPU(const GPU& other, const vector<size_t>& blocks)
     vector<size_t> protectedSlots;
 
     for (size_t sourceSlot : blocks) {
+        if (sourceSlot >= other.blocksNum || other.memory[sourceSlot] == nullptr) {
+            continue;
+        }
+
         const string& modelId = other.prefixesInfo[sourceSlot].modelId;
         const vector<string>& key = other.prefixesInfo[sourceSlot].prefixKey;
 
@@ -241,19 +255,18 @@ void GPU::copyMemoryFromOtherGPU(const GPU& other, const vector<size_t>& blocks)
                 break;
             }
         }
+
         if (targetSlot == -1) {
-            for (size_t i = 0; i < blocksNum; ++i) {
+            for (size_t i = 0; i < blocksNum; i++) {
                 if (memory[i] != nullptr && memory[i]->getRefCount() == 0) {
-                    bool found = false;
+                    bool isProtected = false;
                     for (size_t j = 0; j < protectedSlots.size(); j++) {
                         if (protectedSlots[j] == i) {
-                            found = true;
+                            isProtected = true;
                             break;
                         }
                     }
-
-                    if (!found)
-                    {
+                    if (!isProtected) {
                         targetSlot = static_cast<int>(i);
                         delete memory[targetSlot];
                         memory[targetSlot] = nullptr;
@@ -266,6 +279,10 @@ void GPU::copyMemoryFromOtherGPU(const GPU& other, const vector<size_t>& blocks)
             }
         }
 
+        if (targetSlot < 0 || static_cast<size_t>(targetSlot) >= blocksNum) {
+            continue;
+        }
+
         size_t destSlot = static_cast<size_t>(targetSlot);
         memory[destSlot] = other.memory[sourceSlot]->clone();
         prefixesInfo[destSlot].modelId = modelId;
@@ -276,6 +293,9 @@ void GPU::copyMemoryFromOtherGPU(const GPU& other, const vector<size_t>& blocks)
 
 void GPU::acquire(size_t slot) {
     if (memory[slot] != nullptr) {
+        if (!prefixesInfo[slot].prefixKey.empty()) {
+            ++cacheHits;
+        }
         memory[slot]->acquire();
     }
 }
@@ -302,6 +322,11 @@ int GPU::readFromBlock(size_t blockId, size_t offset) const {
 
 void GPU::writeToBlock(size_t blockId, size_t offset, int value) {
     memory[blockId]->writeToBlock(offset, value);
+}
+
+const size_t &GPU::getBlocksNum() const
+{
+    return blocksNum;
 }
 
 const size_t &GPU::getBlockSize() const

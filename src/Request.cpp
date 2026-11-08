@@ -9,6 +9,10 @@ void Request::deallocateMemory(GPU& gpu) {
         gpu.release(memoryBlocks[i]);
     }
     memoryBlocks.clear();
+    if (reservedBlocks > 0) {
+        gpu.unreserve(reservedBlocks, *this);
+        reservedBlocks = 0;
+    }
 }
 
 int Request::getId() const {
@@ -52,8 +56,12 @@ vector<string> GenerativeRequest::getCacheableTokens() const {
 }
 
 void GenerativeRequest::allocateOneBlock(GPU& gpu, size_t slot) const {
-    (void)gpu;
-    (void)slot;
+    gpu.addMemoryBlock(*this, slot);
+    auto* self = const_cast<GenerativeRequest*>(this);
+    self->memoryBlocks.push_back(slot);
+    if (self->reservedBlocks > 0) {
+        self->reservedBlocks--;
+    }
 }
 
 Request* GenerativeRequest::clone(const Model& modelRef) const {
@@ -66,6 +74,41 @@ Request* GenerativeRequest::clone(const Model& modelRef) const {
     return copy;
 }
 
+bool GenerativeRequest::finished() const {
+    return generatedTokensCount >= maxOutputTokens || generatedTokensCount >= outputTokens.size();
+}
+
+void GenerativeRequest::reserveMemory(GPU& gpu) {
+    size_t tokensPerBlock = gpu.getBlockSize() / model.getEmbeddingSize();
+    if (tokensPerBlock > 0) {
+        PrefixMatch match = gpu.findLongestCachedPrefix(model.getModelId(), model.getEmbeddingSize(), tokens);
+        for (size_t slot : match.blockIds) {
+            gpu.acquire(slot);
+            memoryBlocks.push_back(slot);
+        }
+    }
+
+    size_t maxNeeded = getMaxNeededMemory();
+    size_t totalBlocksNeeded = gpu.getBlocksForMemory(maxNeeded);
+    if (totalBlocksNeeded > memoryBlocks.size()) {
+        reservedBlocks = totalBlocksNeeded - memoryBlocks.size();
+        gpu.reserve(reservedBlocks, *this);
+    }
+
+    size_t promptBlocksNeeded = (tokens.size() + tokensPerBlock - 1) / tokensPerBlock;
+    while (memoryBlocks.size() < promptBlocksNeeded) {
+        gpu.allocateBlock(*this);
+    }
+
+    size_t covered = 0;
+    while (covered + tokensPerBlock <= tokens.size()) {
+        size_t blockIdx = covered / tokensPerBlock;
+        vector<string> prefixKey(tokens.begin(), tokens.begin() + covered + tokensPerBlock);
+        gpu.assignPrefixToBlock(memoryBlocks[blockIdx], prefixKey, model.getModelId());
+        covered += tokensPerBlock;
+    }
+}
+
 void GenerativeRequest::act(GPU& gpu) {
     if (finished()) {
         return;
@@ -76,30 +119,30 @@ void GenerativeRequest::act(GPU& gpu) {
         return;
     }
 
-    if (generatedTokensCount < outputTokens.size()) {
-        size_t currentTokenIndex = tokens.size() + generatedTokensCount;
-        size_t blockIdx = currentTokenIndex / tokensPerBlock;
+    size_t currentTokenIndex = tokens.size() + generatedTokensCount;
+    size_t neededBlocksCount = (currentTokenIndex / tokensPerBlock) + 1;
 
-        if (blockIdx < memoryBlocks.size()) {
-            size_t slot = memoryBlocks[blockIdx];
-            size_t offset = (currentTokenIndex % tokensPerBlock) * model.getEmbeddingSize();
-            model.generateTokenEmbedding(outputTokens, gpu, slot, offset);
+    while (memoryBlocks.size() < neededBlocksCount) {
+        gpu.allocateBlock(*this);
+    }
+
+    if (generatedTokensCount < outputTokens.size()) {
+        size_t blockIdx = currentTokenIndex / tokensPerBlock;
+        size_t slot = memoryBlocks[blockIdx];
+        size_t offset = (currentTokenIndex % tokensPerBlock) * model.getEmbeddingSize();
+        
+        model.generateTokenEmbedding(outputTokens, gpu, slot, offset);
+
+        if ((currentTokenIndex % tokensPerBlock) == tokensPerBlock - 1) {
+            vector<string> fullSequence = tokens;
+            for (size_t i = 0; i <= generatedTokensCount; i++) {
+                fullSequence.push_back(outputTokens[i]);
+            }
+            gpu.assignPrefixToBlock(slot, fullSequence, model.getModelId());
         }
     }
 
     ++generatedTokensCount;
-}
-
-bool GenerativeRequest::finished() const {
-    return generatedTokensCount >= maxOutputTokens || generatedTokensCount >= outputTokens.size();
-}
-
-void GenerativeRequest::reserveMemory(GPU& gpu) {
-    size_t neededBlocks = gpu.getBlocksForMemory(getMaxNeededMemory());
-    if (neededBlocks > memoryBlocks.size()) {
-        reservedBlocks = neededBlocks - memoryBlocks.size();
-        gpu.reserve(reservedBlocks, *this);
-    }
 }
 
 string GenerativeRequest::getOutput() const {
@@ -124,59 +167,41 @@ size_t GenerativeRequest::getNeedToUnreserve() const {
 
 EmbeddingRequest::EmbeddingRequest(int id, const Model& model, int admissionCycle, string prompt)
     : Request(id, model, admissionCycle, prompt),
-      isFinished(false) {}
+      isFinished(false),
+      processedTokens(0),
+      accumulatedSum(model.getEmbeddingSize(), 0) {}
 
 size_t EmbeddingRequest::getNeededMemory(const GPU& gpu) const {
-    size_t neededUnits = tokens.size() * model.getEmbeddingSize();
-    return gpu.getBlocksForMemory(neededUnits);
+    (void)gpu;
+    return 2 * model.getEmbeddingSize();
 }
 
 size_t EmbeddingRequest::getMaxNeededMemory() const {
-    return tokens.size() * model.getEmbeddingSize();
+    return 2 * model.getEmbeddingSize();
 }
 
 vector<string> EmbeddingRequest::getCacheableTokens() const {
-    return tokens;
+    return vector<string>();
 }
 
 void EmbeddingRequest::allocateOneBlock(GPU& gpu, size_t slot) const {
-    (void)gpu;
-    (void)slot;
+    gpu.addMemoryBlock(*this, slot);
+    auto* self = const_cast<EmbeddingRequest*>(this);
+    self->memoryBlocks.push_back(slot);
+    if (self->reservedBlocks > 0) {
+        self->reservedBlocks--;
+    }
 }
 
 Request* EmbeddingRequest::clone(const Model& modelRef) const {
     EmbeddingRequest* copy = new EmbeddingRequest(id, modelRef, admissionCycle, "");
     copy->tokens = this->tokens;
     copy->isFinished = this->isFinished;
+    copy->processedTokens = this->processedTokens;
+    copy->accumulatedSum = this->accumulatedSum;
     copy->memoryBlocks = this->memoryBlocks;
     copy->reservedBlocks = this->reservedBlocks;
     return copy;
-}
-
-void EmbeddingRequest::act(GPU& gpu) {
-    if (finished()) {
-        return;
-    }
-
-    size_t tokensPerBlock = gpu.getBlockSize() / model.getEmbeddingSize();
-    if (tokensPerBlock == 0) {
-        return;
-    }
-
-    for (size_t i = 0; i < tokens.size(); i++) {
-        size_t blockIdx = i / tokensPerBlock;
-        if (blockIdx < memoryBlocks.size()) {
-            size_t slot = memoryBlocks[blockIdx];
-            size_t offset = (i % tokensPerBlock) * model.getEmbeddingSize();
-            model.generateTokenEmbedding(tokens, gpu, slot, offset);
-        }
-    }
-
-    isFinished = true;
-}
-
-bool EmbeddingRequest::finished() const {
-    return isFinished;
 }
 
 void EmbeddingRequest::reserveMemory(GPU& gpu) {
@@ -185,10 +210,57 @@ void EmbeddingRequest::reserveMemory(GPU& gpu) {
         reservedBlocks = neededBlocks - memoryBlocks.size();
         gpu.reserve(reservedBlocks, *this);
     }
+    while (memoryBlocks.size() < neededBlocks) {
+        gpu.allocateBlock(*this);
+    }
+}
+
+void EmbeddingRequest::act(GPU& gpu) {
+    if (finished()) {
+        return;
+    }
+
+    if (tokens.empty()) {
+        isFinished = true;
+        return;
+    }
+
+    size_t embeddingSize = model.getEmbeddingSize();
+    size_t slot = memoryBlocks[0];
+
+    vector<string> currentTokenVector = { tokens[processedTokens] };
+    model.generateTokenEmbedding(currentTokenVector, gpu, slot, 0);
+
+    for (size_t i = 0; i < embeddingSize; i++) {
+        accumulatedSum[i] += gpu.readFromBlock(slot, i);
+    }
+
+    ++processedTokens;
+
+    if (processedTokens >= tokens.size()) {
+        isFinished = true;
+    }
+}
+
+bool EmbeddingRequest::finished() const {
+    return isFinished;
 }
 
 string EmbeddingRequest::getOutput() const {
-    return "";
+    if (tokens.empty()) {
+        return "[]";
+    }
+
+    int count = static_cast<int>(tokens.size());
+    string result = "[";
+    for (size_t i = 0; i < accumulatedSum.size(); i++) {
+        if (i > 0) {
+            result += ", ";
+        }
+        result += std::to_string(accumulatedSum[i] / count);
+    }
+    result += "]";
+    return result;
 }
 
 size_t EmbeddingRequest::getNeedToUnreserve() const {

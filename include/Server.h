@@ -1,9 +1,13 @@
 #pragma once
 
+#include <iostream>
+
 #include "GPU.h"
 #include "Request.h"
 #include "SchedulingPolicy.h"
 
+using std::cout;
+using std::endl;
 using std::vector;
 using std::string;
 
@@ -48,7 +52,9 @@ private:
     vector<Request*> nonSubmittedRequests;
     vector<Request*> waitingRequests;
     vector<Request*> activeRequests;
+    vector<size_t> activeGpuIndices;
     SchedulingPolicy* policy;
+    size_t currentCycle;
 
     void clearAll();
 
@@ -58,8 +64,8 @@ public:
     ~Server();                                   
     Server(const Server& other);                
     Server& operator=(const Server& other);     
-    Server(Server&& other) noexcept;            
-    Server& operator=(Server&& other) noexcept; 
+    Server(Server&& other);            
+    Server& operator=(Server&& other); 
 
     bool step();
     void serve();

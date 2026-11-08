@@ -67,6 +67,8 @@ public:
 class EmbeddingRequest: public Request {
 private:
     bool isFinished;
+    size_t processedTokens;
+    vector<int> accumulatedSum;
 public:
     EmbeddingRequest(int id, const Model& model, int admissionCycle, string prompt);
     virtual ~EmbeddingRequest() = default;
