@@ -2,7 +2,7 @@
 
 vector<int> ArrivalOrderPolicy::choose(const vector<const Request*>& eligible, const vector<GPU>& gpus) const {
     (void)gpus;
-    std::vector<int> order;
+    vector<int> order;
     order.reserve(eligible.size());
 
     for (size_t i = 0; i < eligible.size(); i++) {
@@ -17,7 +17,7 @@ SchedulingPolicy* ArrivalOrderPolicy::clone() const {
 }
 
 vector<int> ShortestJobPolicy::choose(const vector<const Request*>& eligible, const vector<GPU>& gpus) const {
-    std::vector<int> order;
+    vector<int> order;
     order.reserve(eligible.size());
 
     if (eligible.empty()) {
@@ -55,7 +55,6 @@ vector<int> LongestPrefixPolicy::choose(const vector<const Request*>& eligible, 
     order.reserve(eligible.size());
 
     vector<size_t> maxPrefixes(eligible.size(), 0);
-
     for (size_t i = 0; i < eligible.size(); i++) {
         order.push_back(static_cast<int>(i));
         const Request* req = eligible[i];

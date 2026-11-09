@@ -8,7 +8,7 @@ using namespace std;
 using json = nlohmann::json;
 
 Config Server::readConfig(string configPath) const{
-    std::ifstream input(configPath);
+    ifstream input(configPath);
     json config;
     input >> config;
     // All the GPUs have the same block size.
@@ -67,52 +67,52 @@ Server::Server(string configPath) :
     policy(nullptr),
     currentCycle(0) {
 
-    Config conf = readConfig(configPath);
+    Config config = readConfig(configPath);
 
-    if (conf.policy == "shortestJob" || conf.policy == "ShortestJob") {
+    if (config.policy == "shortestJob") {
         policy = new ShortestJobPolicy();
-    } else if (conf.policy == "longestPrefix" || conf.policy == "LongestPrefix") {
+    } else if (config.policy == "longestPrefix") {
         policy = new LongestPrefixPolicy();
     } else {
         policy = new ArrivalOrderPolicy();
     }
 
-    for (size_t i = 0; i < conf.gpus.size(); ++i) {
-        size_t blocksNum = conf.gpus[i].memoryBytes / conf.blockSize;
-        gpus.push_back(GPU(blocksNum, conf.blockSize));
+    for (size_t i = 0; i < config.gpus.size(); i++) {
+        size_t blocksNum = config.gpus[i].memoryBytes / config.blockSize;
+        gpus.push_back(GPU(blocksNum, config.blockSize));
     }
 
-    for (size_t i = 0; i < conf.models.size(); ++i) {
-        models.push_back(new Model(conf.models[i].id, conf.models[i].embeddingSize));
+    for (size_t i = 0; i < config.models.size(); i++) {
+        models.push_back(new Model(config.models[i].id, config.models[i].embeddingSize));
     }
 
-    for (size_t i = 0; i < conf.requests.size(); ++i) {
-        const RequestConfig& reqConf = conf.requests[i];
+    for (size_t i = 0; i < config.requests.size(); i++) {
+        const RequestConfig& requestConfig = config.requests[i];
 
         const Model* targetModel = nullptr;
-        for (size_t j = 0; j < models.size(); ++j) {
-            if (models[j]->getModelId() == reqConf.modelId) {
+        for (size_t j = 0; j < models.size(); j++) {
+            if (models[j]->getModelId() == requestConfig.modelId) {
                 targetModel = models[j];
                 break;
             }
         }
 
         if (targetModel != nullptr) {
-            if (reqConf.type == RequestType::Generative) {
+            if (requestConfig.type == RequestType::Generative) {
                 nonSubmittedRequests.push_back(new GenerativeRequest(
-                    static_cast<int>(reqConf.id),
+                    static_cast<int>(requestConfig.id),
                     *targetModel,
-                    reqConf.admissionCycle,
-                    reqConf.prompt,
-                    reqConf.scriptedOutput,
-                    reqConf.maxOutputTokens
+                    requestConfig.admissionCycle,
+                    requestConfig.prompt,
+                    requestConfig.scriptedOutput,
+                    requestConfig.maxOutputTokens
                 ));
             } else {
                 nonSubmittedRequests.push_back(new EmbeddingRequest(
-                    static_cast<int>(reqConf.id),
+                    static_cast<int>(requestConfig.id),
                     *targetModel,
-                    reqConf.admissionCycle,
-                    reqConf.prompt
+                    requestConfig.admissionCycle,
+                    requestConfig.prompt
                 ));
             }
         }
@@ -145,6 +145,15 @@ void Server::clearAll() {
     policy = nullptr;
 }
 
+const Model* Server::findModelById(const string& id) const {
+    for (size_t i = 0; i < models.size(); i++) {
+        if (models[i]->getModelId() == id) {
+            return models[i];
+        }
+    }
+    return nullptr;
+}
+
 Server::~Server() {
     clearAll();
 }
@@ -167,18 +176,9 @@ Server::Server(const Server& other) :
         policy = other.policy->clone();
     }
 
-    auto findMyModel = [this](const string& id) -> const Model* {
-        for (size_t i = 0; i < models.size(); i++) {
-            if (models[i]->getModelId() == id) {
-                return models[i];
-            }
-        }
-        return nullptr;
-    };
-
     for (size_t i = 0; i < other.nonSubmittedRequests.size(); i++) {
         const Request* req = other.nonSubmittedRequests[i];
-        const Model* myModel = findMyModel(req->getModel().getModelId());
+        const Model* myModel = findModelById(req->getModel().getModelId());
         if (myModel != nullptr) {
             nonSubmittedRequests.push_back(req->clone(*myModel));
         }
@@ -186,7 +186,7 @@ Server::Server(const Server& other) :
 
     for (size_t i = 0; i < other.waitingRequests.size(); i++) {
         const Request* req = other.waitingRequests[i];
-        const Model* myModel = findMyModel(req->getModel().getModelId());
+        const Model* myModel = findModelById(req->getModel().getModelId());
         if (myModel != nullptr) {
             waitingRequests.push_back(req->clone(*myModel));
         }
@@ -194,7 +194,7 @@ Server::Server(const Server& other) :
 
     for (size_t i = 0; i < other.activeRequests.size(); i++) {
         const Request* req = other.activeRequests[i];
-        const Model* myModel = findMyModel(req->getModel().getModelId());
+        const Model* myModel = findModelById(req->getModel().getModelId());
         if (myModel != nullptr) {
             activeRequests.push_back(req->clone(*myModel));
         }
@@ -209,7 +209,7 @@ Server& Server::operator=(const Server& other) {
         currentCycle = other.currentCycle;
         activeGpuIndices = other.activeGpuIndices;
 
-        for (size_t i = 0; i < other.models.size(); ++i) {
+        for (size_t i = 0; i < other.models.size(); i++) {
             models.push_back(new Model(*other.models[i]));
         }
 
@@ -217,18 +217,9 @@ Server& Server::operator=(const Server& other) {
             policy = other.policy->clone();
         }
 
-        auto findMyModel = [this](const string& id) -> const Model* {
-            for (size_t i = 0; i < models.size(); ++i) {
-                if (models[i]->getModelId() == id) {
-                    return models[i];
-                }
-            }
-            return nullptr;
-        };
-
         for (size_t i = 0; i < other.nonSubmittedRequests.size(); i++) {
             const Request* req = other.nonSubmittedRequests[i];
-            const Model* myModel = findMyModel(req->getModel().getModelId());
+            const Model* myModel = findModelById(req->getModel().getModelId());
             if (myModel != nullptr) {
                 nonSubmittedRequests.push_back(req->clone(*myModel));
             }
@@ -236,7 +227,7 @@ Server& Server::operator=(const Server& other) {
 
         for (size_t i = 0; i < other.waitingRequests.size(); i++) {
             const Request* req = other.waitingRequests[i];
-            const Model* myModel = findMyModel(req->getModel().getModelId());
+            const Model* myModel = findModelById(req->getModel().getModelId());
             if (myModel != nullptr) {
                 waitingRequests.push_back(req->clone(*myModel));
             }
@@ -244,7 +235,7 @@ Server& Server::operator=(const Server& other) {
 
         for (size_t i = 0; i < other.activeRequests.size(); i++) {
             const Request* req = other.activeRequests[i];
-            const Model* myModel = findMyModel(req->getModel().getModelId());
+            const Model* myModel = findModelById(req->getModel().getModelId());
             if (myModel != nullptr) {
                 activeRequests.push_back(req->clone(*myModel));
             }
@@ -254,12 +245,12 @@ Server& Server::operator=(const Server& other) {
 }
 
 Server::Server(Server&& other)
-    : gpus(std::move(other.gpus)),
-      models(std::move(other.models)),
-      nonSubmittedRequests(std::move(other.nonSubmittedRequests)),
-      waitingRequests(std::move(other.waitingRequests)),
-      activeRequests(std::move(other.activeRequests)),
-      activeGpuIndices(std::move(other.activeGpuIndices)),
+    : gpus(move(other.gpus)),
+      models(move(other.models)),
+      nonSubmittedRequests(move(other.nonSubmittedRequests)),
+      waitingRequests(move(other.waitingRequests)),
+      activeRequests(move(other.activeRequests)),
+      activeGpuIndices(move(other.activeGpuIndices)),
       policy(other.policy),
       currentCycle(other.currentCycle) {
     other.policy = nullptr;
@@ -270,12 +261,12 @@ Server& Server::operator=(Server&& other) {
     if (this != &other) {
         clearAll();
 
-        gpus = std::move(other.gpus);
-        models = std::move(other.models);
-        nonSubmittedRequests = std::move(other.nonSubmittedRequests);
-        waitingRequests = std::move(other.waitingRequests);
-        activeRequests = std::move(other.activeRequests);
-        activeGpuIndices = std::move(other.activeGpuIndices);
+        gpus = move(other.gpus);
+        models = move(other.models);
+        nonSubmittedRequests = move(other.nonSubmittedRequests);
+        waitingRequests = move(other.waitingRequests);
+        activeRequests = move(other.activeRequests);
+        activeGpuIndices = move(other.activeGpuIndices);
         
         policy = other.policy;
         currentCycle = other.currentCycle;
@@ -287,7 +278,7 @@ Server& Server::operator=(Server&& other) {
 }
 
 bool Server::step() {
-vector<Request*> remainingNonSubmitted;
+    vector<Request*> remainingNonSubmitted;
     for (size_t i = 0; i < nonSubmittedRequests.size(); i++) {
         Request* req = nonSubmittedRequests[i];
         if (static_cast<size_t>(req->getAdmissionCycle()) <= currentCycle) {
@@ -302,7 +293,7 @@ vector<Request*> remainingNonSubmitted;
             }
 
             if (!canEverFit) {
-                cout << "rejected " << req->getId() << " cycle=" << currentCycle << "\n";
+                cout << "rejected " << req->getId() << " cycle=" << currentCycle << endl;
                 delete req;
             } else {
                 waitingRequests.push_back(req);
@@ -324,8 +315,8 @@ vector<Request*> remainingNonSubmitted;
         vector<bool> scheduled(waitingRequests.size(), false);
 
         for (size_t i = 0; i < scheduleOrder.size(); i++) {
-            int reqIdx = scheduleOrder[i];
-            Request* req = waitingRequests[reqIdx];
+            int requsetIndex = scheduleOrder[i];
+            Request* request = waitingRequests[requsetIndex];
 
             int bestGpu = -1;
             size_t maxCachedBlocks = 0;
@@ -333,12 +324,12 @@ vector<Request*> remainingNonSubmitted;
 
             for (size_t j = 0; j < gpus.size(); j++) {
                 PrefixMatch match = gpus[j].findLongestCachedPrefix(
-                    req->getModel().getModelId(),
-                    req->getModel().getEmbeddingSize(),
-                    req->getTokens()
+                    request->getModel().getModelId(),
+                    request->getModel().getEmbeddingSize(),
+                    request->getTokens()
                 );
                 size_t cachedBlocks = match.blockIds.size();
-                size_t neededBlocks = gpus[j].getBlocksForMemory(req->getNeededMemory(gpus[j]));
+                size_t neededBlocks = gpus[j].getBlocksForMemory(request->getNeededMemory(gpus[j]));
 
                 if (gpus[j].availableSlots() >= neededBlocks) {
                     if (bestGpu == -1 || cachedBlocks > maxCachedBlocks) {
@@ -358,11 +349,11 @@ vector<Request*> remainingNonSubmitted;
                 vector<size_t> blocksToCopy;
 
                 for (size_t j = 0; j < gpus.size(); j++) {
-                    if (static_cast<int>(j) != bestGpu && !req->getCacheableTokens().empty()) {
+                    if (static_cast<int>(j) != bestGpu && !request->getCacheableTokens().empty()) {
                         PrefixMatch match = gpus[j].findLongestCachedPrefix(
-                            req->getModel().getModelId(),
-                            req->getModel().getEmbeddingSize(),
-                            req->getTokens()
+                            request->getModel().getModelId(),
+                            request->getModel().getEmbeddingSize(),
+                            request->getTokens()
                         );
                         if (match.matchedTokens > longestMatch) {
                             longestMatch = match.matchedTokens;
@@ -372,14 +363,14 @@ vector<Request*> remainingNonSubmitted;
                     }
                 }
 
-                if (longestPrefixGpu != -1 && longestMatch > maxCachedBlocks * (gpus[bestGpu].getBlockSize() / req->getModel().getEmbeddingSize())) {
+                if (longestPrefixGpu != -1 && longestMatch > maxCachedBlocks * (gpus[bestGpu].getBlockSize() / request->getModel().getEmbeddingSize())) {
                     gpus[bestGpu].copyMemoryFromOtherGPU(gpus[longestPrefixGpu], blocksToCopy);
                 }
 
-                req->reserveMemory(gpus[bestGpu]);
-                activeRequests.push_back(req);
+                request->reserveMemory(gpus[bestGpu]);
+                activeRequests.push_back(request);
                 activeGpuIndices.push_back(static_cast<size_t>(bestGpu));
-                scheduled[reqIdx] = true;
+                scheduled[requsetIndex] = true;
             }
         }
 
@@ -434,5 +425,5 @@ void Server::serve() {
 
     cout << "summary: cycles=" << currentCycle 
          << " cache_hits=" << totalHits 
-         << " evictions=" << totalEvictions << "\n";
+         << " evictions=" << totalEvictions << endl;
 }

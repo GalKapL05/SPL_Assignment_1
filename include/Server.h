@@ -57,6 +57,7 @@ private:
     size_t currentCycle;
 
     void clearAll();
+    const Model* findModelById(const string& id) const;
 
 public:
     Server(string configPath);
