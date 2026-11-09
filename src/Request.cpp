@@ -66,7 +66,7 @@ vector<string> GenerativeRequest::getCacheableTokens() const {
 
 void GenerativeRequest::allocateOneBlock(GPU& gpu, size_t slot) const {
     gpu.addMemoryBlock(*this, slot);
-    auto* self = const_cast<GenerativeRequest*>(this);
+    GenerativeRequest* self = const_cast<GenerativeRequest*>(this);
     self->memoryBlocks.push_back(slot);
     if (self->reservedBlocks > 0) {
         self->reservedBlocks--;
@@ -192,7 +192,7 @@ vector<string> EmbeddingRequest::getCacheableTokens() const {
 
 void EmbeddingRequest::allocateOneBlock(GPU& gpu, size_t slot) const {
     gpu.addMemoryBlock(*this, slot);
-    auto* self = const_cast<EmbeddingRequest*>(this);
+    EmbeddingRequest* self = const_cast<EmbeddingRequest*>(this);
     self->memoryBlocks.push_back(slot);
     if (self->reservedBlocks > 0) {
         self->reservedBlocks--;
