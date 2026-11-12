@@ -1,0 +1,58 @@
+{
+  "scheduling_policy": "arrivalOrder",
+  "block_size": 8,
+  "gpus": [
+    {
+      "memory_bytes": 64
+    },
+    {
+      "memory_bytes": 128
+    }
+  ],
+  "models": [
+    {
+      "id": "gpt",
+      "embedding_size": 4
+    },
+    {
+      "id": "embedder",
+      "embedding_size": 4
+    }
+  ],
+  "requests": [
+    {
+      "id": 1,
+      "type": "generative",
+      "model": "gpt",
+      "cycle": 0,
+      "prompt": "what is the capital of france",
+      "scripted_output": "paris is the capital",
+      "max_output_tokens": 3
+    },
+    {
+      "id": 2,
+      "type": "text_embedder",
+      "model": "embedder",
+      "cycle": 1,
+      "prompt": "the dog barked loudly"
+    },
+    {
+      "id": 3,
+      "type": "generative",
+      "model": "gpt",
+      "cycle": 2,
+      "prompt": "hello world",
+      "scripted_output": "hi there",
+      "max_output_tokens": 5
+    },
+    {
+      "id": 4,
+      "type": "generative",
+      "model": "gpt",
+      "cycle": 12,
+      "prompt": "what is the capital of italy",
+      "scripted_output": "rome",
+      "max_output_tokens": 2
+    }
+  ]
+}
